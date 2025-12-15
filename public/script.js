@@ -1,14 +1,14 @@
-// script.js
+// script.js - CÓDIGO COMPLETO ATUALIZADO
 // IMPORTANTE: Este script usa `axios` que é definido no backend. 
 // Para que a comunicação com o backend funcione, estamos usando `fetch` ou `axios` 
 // que são nativos no navegador, mas o servidor Express deve estar rodando!
 
 // Variáveis de estado global
 let accessToken = null;
-let currentArtistId = null;   // NOVO: ID do artista atualmente exibido
+let currentArtistId = null;   // ID do artista atualmente exibido
 let artistName = null;
-let currentSearchQuery = ''; // NOVO: Armazena o termo de pesquisa
-let excludedArtistIds = []; // NOVO: Lista de IDs de artistas rejeitados
+let currentSearchQuery = ''; // Armazena o termo de pesquisa
+let excludedArtistIds = []; // Lista de IDs de artistas rejeitados
 // Variável para a URL do servidor (necessário para o axios no frontend)
 const BASE_URL = window.location.origin;
 
@@ -34,8 +34,13 @@ const themeToggle = document.getElementById('theme-toggle');
 
 // NOVOS ELEMENTOS DOM PARA CONFIRMAÇÃO
 const confirmArtistBtn = document.getElementById('confirm-artist-btn'); 
-const refineSearchBtn = document.getElementById('refine-search-btn');   
+const refineSearchBtn = document.getElementById('refine-search-btn');   
 const artistConfirmationButtons = document.getElementById('artist-confirmation-buttons'); 
+
+// NOVOS ELEMENTOS DOM PARA NOME PERSONALIZADO E SUGESTÃO
+const newPlaylistNameInput = document.getElementById('new-playlist-name'); 
+const newPlaylistNameContainer = document.getElementById('new-playlist-name-container');
+const playlistNameSuggestion = document.getElementById('playlist-name-suggestion');
 
 
 // Função para formatar números (ex: 1234567 -> 1.234.567)
@@ -64,13 +69,15 @@ themeToggle.checked = savedTheme === 'light';
 applyTheme(savedTheme);
 
 
-// Lógica para mostrar/esconder a seleção de playlists existentes
+// Lógica para mostrar/esconder a seleção de playlists existentes E o campo de nome
 playlistDestinationSelect.addEventListener('change', (e) => {
     if (e.target.value === 'existing') {
         existingPlaylistSelect.classList.remove('hidden');
+        newPlaylistNameContainer.classList.add('hidden'); // ESCONDE O CAMPO DE NOME E SUGESTÃO
         checkCreationButtonState(); 
     } else {
         existingPlaylistSelect.classList.add('hidden');
+        newPlaylistNameContainer.classList.remove('hidden'); // MOSTRA O CAMPO DE NOME E SUGESTÃO
         checkCreationButtonState(); 
     }
 });
@@ -79,11 +86,16 @@ playlistDestinationSelect.addEventListener('change', (e) => {
 const checkCreationButtonState = () => {
     const selectedTracks = tracksList.querySelectorAll('input[type="checkbox"]:checked').length;
     const isExistingMode = playlistDestinationSelect.value === 'existing';
-    // O botão deve ser desabilitado se estiver no modo 'existing' e nenhuma playlist foi selecionada
+    const isNewMode = playlistDestinationSelect.value === 'new';
+    
+    // Checagem para modo "Existente"
     const isPlaylistSelected = existingPlaylistSelect.value !== ''; 
+    
+    // Checagem para modo "Nova"
+    const isNewNameProvided = newPlaylistNameInput.value.trim().length > 0;
 
     if (selectedTracks > 0 && 
-       (!isExistingMode || (isExistingMode && isPlaylistSelected))) {
+       ((isExistingMode && isPlaylistSelected) || (isNewMode && isNewNameProvided))) {
         createPlaylistBtn.disabled = false;
     } else {
         createPlaylistBtn.disabled = true;
@@ -92,7 +104,9 @@ const checkCreationButtonState = () => {
 
 // Adiciona listener para a seleção de playlists (para habilitar o botão)
 existingPlaylistSelect.addEventListener('change', checkCreationButtonState);
-// Adiciona listener para as músicas selecionadas (a lista de músicas é populada depois)
+// Adiciona listener para o input de nome (para habilitar o botão)
+newPlaylistNameInput.addEventListener('input', checkCreationButtonState);
+
 
 // ---------------------------------
 // Funções de Autenticação
@@ -163,7 +177,7 @@ const fetchUserProfile = async (token) => {
 };
 
 // -----------------------------------------------------
-// FUNÇÕES DE PESQUISA (NOVAS: 1. Busca Artista, 2. Confirma, 3. Busca Detalhes)
+// FUNÇÕES DE PESQUISA (1. Busca Artista, 2. Confirma, 3. Busca Detalhes)
 // -----------------------------------------------------
 
 // 1. Inicia a busca (chamada pelo botão de pesquisa)
@@ -193,6 +207,10 @@ const performArtistSearch = async (query, excludedIds) => {
     artistConfirmationButtons.classList.add('hidden'); 
     playlistCreatorSection.classList.add('hidden');
     createPlaylistBtn.disabled = true;
+    
+    // Esconder a sugestão de nome ao iniciar a busca
+    playlistNameSuggestion.classList.add('hidden');
+    newPlaylistNameInput.value = ''; // Limpa o campo de nome
 
     try {
         // Faz a requisição para buscar o artista mais relevante (que não esteja excluído)
@@ -260,7 +278,23 @@ const fetchTracksAndPlaylists = async () => {
 
         // 2. Preencher lista de músicas (com checkbox)
         populateTracksList(data.tracks);
-        
+        
+        // --- LÓGICA DE SUGESTÃO DE NOME ---
+        const suggestedName = `SPFC - Músicas de ${artistName}`;
+        
+        // Atualiza o texto da sugestão com o nome
+        playlistNameSuggestion.querySelector('.suggestion-name').textContent = `"${suggestedName}"`;
+        playlistNameSuggestion.classList.remove('hidden');
+        
+        // Define a sugestão como "dado" no elemento para o listener pegar
+        playlistNameSuggestion.dataset.suggestedName = suggestedName;
+        
+        // Garante que o campo de nome está visível se for a opção 'new'
+        if (playlistDestinationSelect.value === 'new') {
+            newPlaylistNameContainer.classList.remove('hidden');
+        }
+        // --- FIM LÓGICA DE SUGESTÃO DE NOME ---
+
         playlistCreatorSection.classList.remove('hidden');
         searchStatus.className = 'status-message success-message';
         searchStatus.textContent = `Artista ${artistName} confirmado. Músicas e participações listadas abaixo.`;
@@ -338,6 +372,15 @@ const createPlaylist = async () => {
     // 2. Coletar opções
     const playlistOption = playlistDestinationSelect.value;
     const targetPlaylistId = existingPlaylistSelect.value;
+    const newPlaylistName = newPlaylistNameInput.value.trim(); // NOVO: Obter nome
+
+    // Validação do Nome da Nova Playlist
+    if (playlistOption === 'new' && newPlaylistName.length === 0) {
+        creationStatus.className = 'status-message error-message';
+        creationStatus.textContent = 'Por favor, digite ou clique na sugestão para dar um nome para a nova playlist.';
+        createPlaylistBtn.disabled = false;
+        return;
+    }
 
     if (playlistOption === 'existing' && !targetPlaylistId) {
         creationStatus.className = 'status-message error-message';
@@ -358,7 +401,8 @@ const createPlaylist = async () => {
                 artistName: artistName, 
                 trackUris: selectedUris,
                 playlistOption: playlistOption,
-                targetPlaylistId: targetPlaylistId
+                targetPlaylistId: targetPlaylistId,
+                newPlaylistName: newPlaylistName // ENVIAR O NOME PERSONALIZADO
             })
         });
 
@@ -377,7 +421,9 @@ const createPlaylist = async () => {
         if (playlistOption === 'new') {
              // O ideal seria chamar performArtistSearch, mas para simplificar,
              // vamos apenas buscar o artista novamente para atualizar as playlists
-             searchArtist(); 
+             // NOTE: searchArtist chama performArtistSearch, que reinicia o ciclo
+              // Vamos chamar fetchTracksAndPlaylists diretamente para recarregar playlists sem confirmar o artista.
+              fetchTracksAndPlaylists(); 
         }
 
     } catch (error) {
@@ -407,30 +453,41 @@ artistSearchInput.addEventListener('keypress', (e) => {
 // Listener do botão de criação de playlist
 createPlaylistBtn.addEventListener('click', createPlaylist);
 
+// NOVO: Listener para preenchimento da sugestão de nome
+playlistNameSuggestion.addEventListener('click', () => {
+    // Pega o nome sugerido que armazenamos no dataset
+    const suggestedName = playlistNameSuggestion.dataset.suggestedName;
+    if (suggestedName) {
+        newPlaylistNameInput.value = suggestedName;
+        checkCreationButtonState(); // Reabilita o botão Criar Playlist
+    }
+});
+
+
 // NOVO: Listeners para o fluxo de confirmação
 confirmArtistBtn.addEventListener('click', async () => {
-    // 1. Esconde os botões de confirmação
-    artistConfirmationButtons.classList.add('hidden');
-    searchStatus.className = 'status-message info-message';
-    searchStatus.textContent = `Buscando todas as músicas de ${artistName}...`;
-    
-    // 2. Chama a busca de músicas
-    await fetchTracksAndPlaylists();
+    // 1. Esconde os botões de confirmação
+    artistConfirmationButtons.classList.add('hidden');
+    searchStatus.className = 'status-message info-message';
+    searchStatus.textContent = `Buscando todas as músicas de ${artistName}...`;
+    
+    // 2. Chama a busca de músicas
+    await fetchTracksAndPlaylists();
 });
 
 refineSearchBtn.addEventListener('click', async () => {
-    // 1. Adiciona o ID do artista rejeitado à lista de exclusão
-    if (currentArtistId) {
-        excludedArtistIds.push(currentArtistId);
-    }
-    
-    // 2. Volta para o estado inicial para buscar o próximo artista
-    artistInfoContainer.classList.add('hidden');
-    artistConfirmationButtons.classList.add('hidden');
-    playlistCreatorSection.classList.add('hidden'); // Esconde a seção de músicas
-    searchStatus.className = 'status-message info-message';
-    searchStatus.textContent = `Artista ${artistName} rejeitado. Buscando o próximo artista...`;
+    // 1. Adiciona o ID do artista rejeitado à lista de exclusão
+    if (currentArtistId) {
+        excludedArtistIds.push(currentArtistId);
+    }
+    
+    // 2. Volta para o estado inicial para buscar o próximo artista
+    artistInfoContainer.classList.add('hidden');
+    artistConfirmationButtons.classList.add('hidden');
+    playlistCreatorSection.classList.add('hidden'); // Esconde a seção de músicas
+    searchStatus.className = 'status-message info-message';
+    searchStatus.textContent = `Artista ${artistName} rejeitado. Buscando o próximo artista...`;
 
-    // 3. Tenta a busca novamente com a nova lista de exclusão
-    await performArtistSearch(currentSearchQuery, excludedArtistIds);
+    // 3. Tenta a busca novamente com a nova lista de exclusão
+    await performArtistSearch(currentSearchQuery, excludedArtistIds);
 });

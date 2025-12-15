@@ -351,3 +351,22 @@ footer {
     padding: 8px 15px;
     font-size: 0.9rem;
 }
+
+/* --- Estilos para Sugestão de Nome Clicável (UX) --- */
+
+.suggestion-text {
+    margin-top: 10px;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+    cursor: pointer; /* Transforma o mouse em mão, indicando que é clicável */
+    color: var(--primary-color); /* Destaca a cor do texto para ser notado */
+    border-bottom: 1px dashed var(--primary-color-faded); /* Linha tracejada para indicar interação */
+    display: block;
+    padding: 5px 0;
+    user-select: none; /* Impede que o texto seja selecionado ao clicar */
+}
+
+.suggestion-text:hover {
+    color: var(--secondary-color); /* Muda a cor ao passar o mouse */
+    border-bottom-color: var(--secondary-color);
+}

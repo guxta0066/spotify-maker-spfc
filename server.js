@@ -1,4 +1,4 @@
-// server.js - CÓDIGO COMPLETO FINAL COM CORREÇÃO 429
+// server.js - CÓDIGO FINAL COM NOME PERSONALIZADO E CORREÇÃO 429
 require('dotenv').config(); 
 const express = require('express');
 const axios = require('axios');
@@ -104,45 +104,45 @@ app.get('/callback', async (req, res) => {
 // 3. Rota de API para Pesquisar Artista (COM FILTRO DE EXCLUSÃO)
 // -----------------------------------------------------
 app.post('/api/search-artist', async (req, res) => {
-    const { artistName, accessToken, excludedIds = [] } = req.body; 
+    const { artistName, accessToken, excludedIds = [] } = req.body; 
 
-    if (!accessToken || !artistName) {
-        return res.status(400).json({ error: 'Token de acesso e nome do artista são necessários.' });
-    }
-    
-    try {
-        // Busca alguns artistas para permitir a filtragem de excluídos
-        const response = await axios.get('https://api.spotify.com/v1/search', {
-            params: {
-                q: artistName,
-                type: 'artist',
-                limit: 5 
-            },
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
+    if (!accessToken || !artistName) {
+        return res.status(400).json({ error: 'Token de acesso e nome do artista são necessários.' });
+    }
+    
+    try {
+        // Busca alguns artistas para permitir a filtragem de excluídos
+        const response = await axios.get('https://api.spotify.com/v1/search', {
+            params: {
+                q: artistName,
+                type: 'artist',
+                limit: 5 
+            },
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
 
-        // Filtra o primeiro artista que NÃO esteja na lista de exclusão
-        const artist = response.data.artists.items.find(item => !excludedIds.includes(item.id));
-        
-        if (!artist) {
-             return res.status(404).json({ error: 'Nenhum artista encontrado com esse nome que não tenha sido rejeitado.' });
-        }
+        // Filtra o primeiro artista que NÃO esteja na lista de exclusão
+        const artist = response.data.artists.items.find(item => !excludedIds.includes(item.id));
+        
+        if (!artist) {
+             return res.status(404).json({ error: 'Nenhum artista encontrado com esse nome que não tenha sido rejeitado.' });
+        }
 
-        res.json({
-            artist: {
-                id: artist.id,
-                name: artist.name,
-                image: artist.images.length > 0 ? artist.images[0].url : null,
-                followers: artist.followers.total
-            }
-        });
+        res.json({
+            artist: {
+                id: artist.id,
+                name: artist.name,
+                image: artist.images.length > 0 ? artist.images[0].url : null,
+                followers: artist.followers.total
+            }
+        });
 
-    } catch (error) {
-        console.error('Erro na pesquisa do artista:', error.response ? error.response.data : error.message);
-        res.status(error.response ? error.response.status : 500).json({ error: 'Falha ao buscar artista. O token pode ter expirado.' });
-    }
+    } catch (error) {
+        console.error('Erro na pesquisa do artista:', error.response ? error.response.data : error.message);
+        res.status(error.response ? error.response.status : 500).json({ error: 'Falha ao buscar artista. O token pode ter expirado.' });
+    }
 });
 
 
@@ -150,101 +150,102 @@ app.post('/api/search-artist', async (req, res) => {
 // 4. Rota de API para Detalhes (Busca Músicas e Playlists) - CORRIGIDA (com delay de 50ms)
 // -----------------------------------------------------
 app.post('/api/search-artist-details', async (req, res) => {
-    const { accessToken, artistId, artistName } = req.body;
+    const { accessToken, artistId, artistName } = req.body;
 
-    if (!accessToken || !artistId) {
-        return res.status(400).json({ error: 'Token de acesso e ID do artista são necessários.' });
-    }
+    if (!accessToken || !artistId) {
+        return res.status(400).json({ error: 'Token de acesso e ID do artista são necessários.' });
+    }
 
-    try {
-        let allTracksMap = new Map();
+    try {
+        let allTracksMap = new Map();
 
-        // A. Buscar Top Tracks
-        const topTracksResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?country=BR`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        topTracksResponse.data.tracks.forEach(track => {
-            allTracksMap.set(track.id, track);
-        });
+        // A. Buscar Top Tracks
+        const topTracksResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?country=BR`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        topTracksResponse.data.tracks.forEach(track => {
+            allTracksMap.set(track.id, track);
+        });
 
-        // B. Buscar Álbuns e Singles
-        const albumsResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&country=BR&limit=50`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+        // B. Buscar Álbuns e Singles
+        const albumsResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&country=BR&limit=50`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
 
-        const albumIds = albumsResponse.data.items.map(album => album.id);
-        
-        // C. Buscar as faixas de CADA álbum
-        for (const albumId of albumIds) {
-            try {
-                const tracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
-                
-                tracksResponse.data.items.forEach(track => {
-                    const fullTrack = {
-                        id: track.id,
-                        uri: track.uri,
-                        name: track.name,
-                        album: {
-                            name: albumsResponse.data.items.find(a => a.id === albumId)?.name || 'Álbum Desconhecido'
-                        },
-                        artists: track.artists
-                    };
-                    allTracksMap.set(track.id, fullTrack);
-                });
+        const albumIds = albumsResponse.data.items.map(album => album.id);
+        
+        // C. Buscar as faixas de CADA álbum
+        for (const albumId of albumIds) {
+            try {
+                const tracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                
+                tracksResponse.data.items.forEach(track => {
+                    const fullTrack = {
+                        id: track.id,
+                        uri: track.uri,
+                        name: track.name,
+                        album: {
+                            name: albumsResponse.data.items.find(a => a.id === albumId)?.name || 'Álbum Desconhecido'
+                        },
+                        artists: track.artists
+                    };
+                    allTracksMap.set(track.id, fullTrack);
+                });
 
-                // >>> CÓDIGO DE ATRASO (50ms) ADICIONADO AQUI PARA EVITAR O ERRO 429
-                await new Promise(resolve => setTimeout(resolve, 50)); 
-                
-            } catch (albumError) {
-                console.warn(`Aviso: Não foi possível obter faixas do álbum ${albumId}.`, albumError.message);
-                // Adiciona um atraso maior em caso de erro de álbum
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-        }
-        
-        // D. Buscar Participações (Busca pelo nome do artista)
-        const searchCollabResponse = await axios.get('https://api.spotify.com/v1/search', {
-            params: { 
-                q: `artist:"${artistName}"`, 
-                type: 'track', 
-                limit: 50 
-            },
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+                // >>> CÓDIGO DE ATRASO (50ms) ADICIONADO AQUI PARA EVITAR O ERRO 429
+                await new Promise(resolve => setTimeout(resolve, 50)); 
+                
+            } catch (albumError) {
+                console.warn(`Aviso: Não foi possível obter faixas do álbum ${albumId}.`, albumError.message);
+                // Adiciona um atraso maior em caso de erro de álbum
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+        
+        // D. Buscar Participações (Busca pelo nome do artista)
+        const searchCollabResponse = await axios.get('https://api.spotify.com/v1/search', {
+            params: { 
+                q: `artist:"${artistName}"`, 
+                type: 'track', 
+                limit: 50 
+            },
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
 
-        searchCollabResponse.data.tracks.items.forEach(track => {
-            allTracksMap.set(track.id, track);
-        });
-        
-        const uniqueTracks = Array.from(allTracksMap.values());
+        searchCollabResponse.data.tracks.items.forEach(track => {
+            allTracksMap.set(track.id, track);
+        });
+        
+        const uniqueTracks = Array.from(allTracksMap.values());
 
-        // E. Buscar as Playlists do Usuário
-        const userPlaylistsResponse = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+        // E. Buscar as Playlists do Usuário
+        const userPlaylistsResponse = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
 
-        res.json({
-            tracks: uniqueTracks, 
-            playlists: userPlaylistsResponse.data.items
-        });
+        res.json({
+            tracks: uniqueTracks, 
+            playlists: userPlaylistsResponse.data.items
+        });
 
-    } catch (error) {
-        console.error('Erro na busca de detalhes do artista:', error.response ? error.response.data : error.message);
-        res.status(error.response ? error.response.status : 500).json({ 
-            error: 'Falha ao buscar detalhes do artista no Spotify.', 
-            details: error.response ? error.response.data : 'Erro interno.'
-        });
-    }
+    } catch (error) {
+        console.error('Erro na busca de detalhes do artista:', error.response ? error.response.data : error.message);
+        res.status(error.response ? error.response.status : 500).json({ 
+            error: 'Falha ao buscar detalhes do artista no Spotify.', 
+            details: error.response ? error.response.data : 'Erro interno.'
+        });
+    }
 });
 
 
 // ---------------------------------
-// 5. Rota de API para Criar Playlist (Mantida)
+// 5. Rota de API para Criar Playlist (MODIFICADA para receber o nome)
 // ---------------------------------
 app.post('/api/create-playlist', async (req, res) => {
-    const { accessToken, artistName, trackUris, playlistOption, targetPlaylistId } = req.body;
+    // NOVO: Adicionado newPlaylistName
+    const { accessToken, artistName, trackUris, playlistOption, targetPlaylistId, newPlaylistName } = req.body; 
 
     if (!accessToken || !trackUris || trackUris.length === 0) {
         return res.status(400).json({ error: 'Dados incompletos para criar/adicionar playlist.' });
@@ -261,9 +262,11 @@ app.post('/api/create-playlist', async (req, res) => {
 
         // 2. Criar nova playlist OU usar playlist existente
         if (playlistOption === 'new') {
-            const playlistName = `SPFC - Músicas de ${artistName}`;
+            // Usa o nome enviado pelo frontend, ou um fallback se estiver vazio
+            const finalPlaylistName = newPlaylistName || `SPFC - Músicas de ${artistName}`; 
+
             const playlistResponse = await axios.post(`https://www.google.com/search?q=https://api.spotify.com/v1/artists/%24{userId}/playlists`, {
-                name: playlistName,
+                name: finalPlaylistName, // <--- USA O NOME FINAL E PERSONALIZADO
                 public: false, // Criar como privada por padrão
                 description: `Playlist gerada automaticamente para o artista ${artistName} via App SPFC.`
             }, {
