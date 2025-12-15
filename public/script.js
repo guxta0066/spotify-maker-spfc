@@ -225,11 +225,12 @@ const populatePlaylistSelect = (playlists) => {
     });
 };
 
+// public/script.js - Função Atualizada
 // Função para preencher a lista de faixas
 const populateTracksList = (tracks) => {
     tracksList.innerHTML = '';
     if (tracks.length === 0) {
-        tracksList.innerHTML = '<p class="placeholder-text">Nenhuma música popular encontrada para este artista.</p>';
+        tracksList.innerHTML = '<p class="placeholder-text">Nenhuma música encontrada para este artista e suas participações.</p>';
         return;
     }
 
@@ -243,12 +244,16 @@ const populateTracksList = (tracks) => {
         checkbox.type = 'checkbox';
         checkbox.value = track.uri; // URI é o identificador do Spotify
         checkbox.checked = true; // Por padrão, todas vêm marcadas
-        checkbox.addEventListener('change', checkCreationButtonState); // Adiciona listener para o botão
+        checkbox.addEventListener('change', checkCreationButtonState); 
 
-        const trackName = document.createTextNode(`${track.name} - ${track.album.name}`);
+        // Formata a lista de artistas para mostrar quem participou
+        const artistNames = track.artists ? track.artists.map(a => a.name).join(', ') : 'Artista Desconhecido';
+        
+        // Nome da faixa + Artistas + Nome do Álbum
+        const trackText = document.createTextNode(`${track.name} - Artistas: ${artistNames} (Álbum: ${track.album?.name || 'N/A'})`);
         
         label.appendChild(checkbox);
-        label.appendChild(trackName);
+        label.appendChild(trackText);
         item.appendChild(label);
         tracksList.appendChild(item);
     });

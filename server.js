@@ -102,9 +102,8 @@ app.get('/callback', async (req, res) => {
     }
 });
 
-// ---------------------------------
-// 3. Rota de API para Pesquisar Artista e Músicas
-// ---------------------------------
+// server.js - Rota Modificada para Busca Detalhada
+// 3. Rota de API para Pesquisar Artista e TODAS as Músicas (incluindo participações e álbuns)
 app.post('/api/search-artist', async (req, res) => {
     const { artistName, accessToken } = req.body;
 
@@ -113,7 +112,7 @@ app.post('/api/search-artist', async (req, res) => {
     }
 
     try {
-        // 1. Buscar o Artista mais relevante
+        // 1. Buscar o Artista mais relevante (para obter o ID)
         const artistSearchResponse = await axios.get('https://api.spotify.com/v1/search', {
             params: { q: artistName, type: 'artist', limit: 1 },
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -124,12 +123,72 @@ app.post('/api/search-artist', async (req, res) => {
              return res.status(404).json({ error: 'Artista não encontrado.' });
         }
         
-        // 2. Buscar as músicas mais populares do artista
-        const topTracksResponse = await axios.get(`https://api.spotify.com/v1/artists/${artist.id}/top-tracks?country=BR&limit=50`, {
+        const artistId = artist.id;
+        let allTracksMap = new Map(); // Usaremos um Map para garantir unicidade (key = track ID)
+
+        // --- MÉTODOS DE BUSCA DETALHADA ---
+
+        // A. Buscar Top Tracks (Para relevância)
+        const topTracksResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?country=BR`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+        topTracksResponse.data.tracks.forEach(track => {
+            allTracksMap.set(track.id, track);
+        });
+
+        // B. Buscar Álbuns (Para faixas principais)
+        const albumsResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&country=BR&limit=50`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        const albumIds = albumsResponse.data.items.map(album => album.id);
         
-        // 3. Buscar as Playlists do Usuário
+        // C. Buscar as faixas de CADA álbum
+        for (const albumId of albumIds) {
+            try {
+                const tracksResponse = await axios.get(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                
+                tracksResponse.data.items.forEach(track => {
+                    // O endpoint de álbum só retorna faixas simples. Precisamos montar o objeto completo
+                    const fullTrack = {
+                        id: track.id,
+                        uri: track.uri,
+                        name: track.name,
+                        album: {
+                            name: albumsResponse.data.items.find(a => a.id === albumId)?.name || 'Álbum Desconhecido'
+                        },
+                        artists: track.artists 
+                    };
+                    allTracksMap.set(track.id, fullTrack);
+                });
+            } catch (albumError) {
+                console.warn(`Aviso: Não foi possível obter faixas do álbum ${albumId}.`, albumError.message);
+            }
+        }
+        
+        // D. Buscar Participações (Featurings) e Compilações (Busca pelo nome)
+        // Isso ajuda a encontrar colaborações que não foram listadas nos álbuns
+        const searchCollabResponse = await axios.get('https://api.spotify.com/v1/search', {
+            params: { 
+                q: `artist:"${artist.name}"`, // Busca exata pelo nome para participações
+                type: 'track', 
+                limit: 50 
+            },
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        searchCollabResponse.data.tracks.items.forEach(track => {
+            // Adiciona se a faixa ainda não estiver na lista
+            allTracksMap.set(track.id, track);
+        });
+        
+        // --- FINALIZAÇÃO ---
+
+        const uniqueTracks = Array.from(allTracksMap.values());
+
+        // Buscar as Playlists do Usuário
         const userPlaylistsResponse = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
@@ -141,19 +200,19 @@ app.post('/api/search-artist', async (req, res) => {
                 image: artist.images.length > 0 ? artist.images[0].url : null,
                 followers: artist.followers.total
             },
-            tracks: topTracksResponse.data.tracks,
+            // Enviamos a lista completa e única
+            tracks: uniqueTracks, 
             playlists: userPlaylistsResponse.data.items
         });
 
     } catch (error) {
-        console.error('Erro na pesquisa do artista:', error.response ? error.response.data : error.message);
+        console.error('Erro na busca detalhada do artista:', error.response ? error.response.data : error.message);
         res.status(error.response ? error.response.status : 500).json({ 
-            error: 'Falha ao buscar dados do Spotify.', 
+            error: 'Falha ao buscar dados do Spotify (Busca Detalhada).', 
             details: error.response ? error.response.data : 'Erro interno.'
         });
     }
 });
-
 
 // ---------------------------------
 // 4. Rota de API para Criar Playlist
