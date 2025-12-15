@@ -25,9 +25,24 @@ app.use(express.static('public'))
 // ---------------------------------
 // Rota inicial
 // ---------------------------------
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+// Rota de login com Spotify
+app.get('/login', (req, res) => {
+  const state = Math.random().toString(36).substring(2, 15);
+  res.cookie('spotify_auth_state', state, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+
+  const scope = 'user-read-private user-read-email playlist-modify-public playlist-modify-private user-library-read';
+
+  res.redirect('https://accounts.spotify.com/authorize?' +
+    querystring.stringify({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      scope: scope,
+      redirect_uri: REDIRECT_URI,
+      state: state
+    })
+  );
 });
+
 
 // ---------------------------------
 // 6. Rota de API para Criar Playlist (ENDPOINT ROBUSTO)
