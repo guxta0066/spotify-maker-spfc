@@ -1,4 +1,4 @@
-// server.js - CÓDIGO FINAL COM CORREÇÃO DE CRIAÇÃO (FAIL SAFE) E DELAY 1000MS
+// server.js - CÓDIGO FINAL COM FAIL-SAFE DE TOKEN
 require('dotenv').config(); 
 const express = require('express');
 const axios = require('axios');
@@ -290,37 +290,49 @@ app.post('/api/create-playlist', async (req, res) => {
 
     try {
         let playlistId;
+        let userId; // Declarar userId fora do bloco
+
+        // 1. Obter o ID do usuário (COM TRY/CATCH DE FAIL-SAFE CONTRA 500)
+        try {
+            const userResponse = await axios.get('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            userId = userResponse.data.id;
+        } catch (tokenError) {
+            // Se falhar ao obter o ID do usuário, o token está ruim (401)
+            console.error('Falha ao obter ID do usuário (Token expirado/inválido):', tokenError.message);
+            // Retorna 401 para que o frontend lide com a renovação/novo login
+            return res.status(401).json({
+                error: 'Sessão expirada. Seu token não é mais válido.',
+                details: 'Por favor, saia da conta e faça login novamente para renovar sua sessão.'
+            });
+        }
         
-        // 1. Obter o ID do usuário
-        const userResponse = await axios.get('https://api.spotify.com/v1/me', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const userId = userResponse.data.id;
 
         // 2. Criar nova playlist OU usar playlist existente
         if (playlistOption === 'new') {
             // Usa o nome enviado pelo frontend, ou um fallback se estiver vazio
             const finalPlaylistName = newPlaylistName || `SPFC - Músicas de ${artistName}`; 
-            
-            try { // <--- NOVO: TRY/CATCH PARA ISOLAR A CRIAÇÃO DE PLAYLIST
-                const playlistResponse = await axios.post(`https://www.google.com/search?q=https://api.spotify.com/v1/artists/%24{userId}/playlists`, {
-                    name: finalPlaylistName, // <--- USA O NOME FINAL E PERSONALIZADO
-                    public: false, // Criar como privada por padrão
-                    description: `Playlist gerada automaticamente para o artista ${artistName} via App SPFC.`
-                }, {
-                    headers: { 
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                playlistId = playlistResponse.data.id;
-            } catch (createError) {
-                // Se a criação falhar, pare a execução e retorne o erro real
-                console.error('Erro ao criar nova playlist:', createError.response ? createError.response.data : createError.message);
-                const spotifyError = createError.response ? createError.response.data.error : { status: 500, message: 'Erro desconhecido.' };
-                
-                throw new Error(`Falha ao criar nova playlist. Status: ${spotifyError.status}. Verifique as permissões do seu token.`);
-            }
+            
+            try { // <--- TRY/CATCH PARA ISOLAR A CRIAÇÃO DE PLAYLIST
+                const playlistResponse = await axios.post(`https://www.google.com/search?q=https://api.spotify.com/v1/artists/%24{userId}/playlists`, {
+                    name: finalPlaylistName, // <--- USA O NOME FINAL E PERSONALIZADO
+                    public: false, // Criar como privada por padrão
+                    description: `Playlist gerada automaticamente para o artista ${artistName} via App SPFC.`
+                }, {
+                    headers: { 
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                playlistId = playlistResponse.data.id;
+            } catch (createError) {
+                // Se a criação falhar, pare a execução e retorne o erro real
+                console.error('Erro ao criar nova playlist:', createError.response ? createError.response.data : createError.message);
+                const spotifyError = createError.response ? createError.response.data.error : { status: 500, message: 'Erro desconhecido.' };
+                
+                throw new Error(`Falha ao criar nova playlist. Status: ${spotifyError.status}. Verifique as permissões do seu token.`);
+            }
 
         } else if (playlistOption === 'existing' && targetPlaylistId) {
             playlistId = targetPlaylistId;
