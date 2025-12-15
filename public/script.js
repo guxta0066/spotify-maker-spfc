@@ -141,11 +141,12 @@ const logout = () => {
 
 // Inicialização: Verifica se o usuário está logado
 const initAuth = () => {
-    accessToken = getTokensFromHash();
+    accessToken = localStorage.getItem('spotify_access_token');
+    if (!accessToken) {
+        accessToken = getTokensFromHash();
+    }
+};
 
-    if (!accessToken) {
-        accessToken = localStorage.getItem('spotify_access_token');
-    }
     
     // Tenta obter o refresh token salvo
     refreshToken = localStorage.getItem('spotify_refresh_token'); 
@@ -160,7 +161,7 @@ const initAuth = () => {
         loginScreen.classList.remove('hidden');
         mainApp.classList.add('hidden');
     }
-};
+;
 
 
 // ---------------------------------
@@ -169,18 +170,22 @@ const initAuth = () => {
 
 // Busca o perfil do usuário logado (para mostrar o nome)
 const fetchUserProfile = async (token) => {
-    try {
-        const response = await fetch('https://api.spotify.com/v1/me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        userInfoEl.textContent = data.display_name || data.id;
-    } catch (error) {
-        console.error('Erro ao buscar perfil:', error);
-        // Se falhar, o token provavelmente expirou. 
-        // Chama logout para forçar novo login e limpar tokens antigos
-        logout(); 
-    }
+    try {
+        const response = await fetch('https://api.spotify.com/v1/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Erro Spotify: ${errorText}`);
+        }
+
+        const data = await response.json();
+        userInfoEl.textContent = data.display_name || data.id;
+    } catch (error) {
+        console.error('Erro ao buscar perfil:', error);
+        logout();
+    }
 };
 
 // -----------------------------------------------------
