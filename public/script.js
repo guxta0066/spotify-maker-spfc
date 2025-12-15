@@ -1,15 +1,15 @@
-// script.js - CÓDIGO FINAL COM LOGOUT E NOVO FLUXO
+// script.js - CÓDIGO FINAL E MAIS ROBUSTO
 
 // Variáveis de estado global
 let accessToken = null;
-let currentArtistId = null;   // ID do artista atualmente exibido
+let refreshToken = null; // NOVO: Para renovar o Access Token
+let currentArtistId = null; 
 let artistName = null;
-let currentSearchQuery = ''; // Armazena o termo de pesquisa
-let excludedArtistIds = []; // Lista de IDs de artistas rejeitados
-// Variável para a URL do servidor (necessário para o axios no frontend)
+let currentSearchQuery = ''; 
+let excludedArtistIds = []; 
 const BASE_URL = window.location.origin;
 
-// Elementos DOM (Mantidos para fins de clareza)
+// Elementos DOM 
 const loginScreen = document.getElementById('login-screen');
 const mainApp = document.getElementById('main-app');
 const artistSearchInput = document.getElementById('artist-search');
@@ -29,19 +29,14 @@ const creationStatus = document.getElementById('creation-status');
 const userInfoEl = document.getElementById('user-info');
 const themeToggle = document.getElementById('theme-toggle');
 
-// NOVOS ELEMENTOS DOM PARA CONFIRMAÇÃO
+// Elementos de Fluxo
 const confirmArtistBtn = document.getElementById('confirm-artist-btn'); 
 const refineSearchBtn = document.getElementById('refine-search-btn');   
 const artistConfirmationButtons = document.getElementById('artist-confirmation-buttons'); 
-
-// NOVOS ELEMENTOS DOM PARA NOME PERSONALIZADO E SUGESTÃO
 const newPlaylistNameInput = document.getElementById('new-playlist-name'); 
 const newPlaylistNameContainer = document.getElementById('new-playlist-name-container');
 const playlistNameSuggestion = document.getElementById('playlist-name-suggestion');
-
-// NOVO ELEMENTO DOM PARA LOGOUT
-const logoutBtn = document.getElementById('logout-btn');
-
+const logoutBtn = document.getElementById('logout-btn'); // Botão de Logout
 
 // Função para formatar números (ex: 1234567 -> 1.234.567)
 const formatNumber = (num) => {
@@ -73,11 +68,11 @@ applyTheme(savedTheme);
 playlistDestinationSelect.addEventListener('change', (e) => {
     if (e.target.value === 'existing') {
         existingPlaylistSelect.classList.remove('hidden');
-        newPlaylistNameContainer.classList.add('hidden'); // ESCONDE O CAMPO DE NOME E SUGESTÃO
+        newPlaylistNameContainer.classList.add('hidden'); 
         checkCreationButtonState(); 
     } else {
         existingPlaylistSelect.classList.add('hidden');
-        newPlaylistNameContainer.classList.remove('hidden'); // MOSTRA O CAMPO DE NOME E SUGESTÃO
+        newPlaylistNameContainer.classList.remove('hidden'); 
         checkCreationButtonState(); 
     }
 });
@@ -88,10 +83,7 @@ const checkCreationButtonState = () => {
     const isExistingMode = playlistDestinationSelect.value === 'existing';
     const isNewMode = playlistDestinationSelect.value === 'new';
     
-    // Checagem para modo "Existente"
     const isPlaylistSelected = existingPlaylistSelect.value !== ''; 
-    
-    // Checagem para modo "Nova"
     const isNewNameProvided = newPlaylistNameInput.value.trim().length > 0;
 
     if (selectedTracks > 0 && 
@@ -102,9 +94,7 @@ const checkCreationButtonState = () => {
     }
 };
 
-// Adiciona listener para a seleção de playlists (para habilitar o botão)
 existingPlaylistSelect.addEventListener('change', checkCreationButtonState);
-// Adiciona listener para o input de nome (para habilitar o botão)
 newPlaylistNameInput.addEventListener('input', checkCreationButtonState);
 
 
@@ -118,6 +108,7 @@ const getTokensFromHash = () => {
     const params = new URLSearchParams(hash);
     
     const token = params.get('access_token');
+    const refreshTokenFromHash = params.get('refresh_token'); // LÊ o refresh token
     const error = params.get('error');
 
     if (error) {
@@ -126,8 +117,11 @@ const getTokensFromHash = () => {
     }
 
     if (token) {
-        // Armazenar o token temporariamente
+        // Armazenar tokens
         localStorage.setItem('spotify_access_token', token);
+        if (refreshTokenFromHash) {
+             localStorage.setItem('spotify_refresh_token', refreshTokenFromHash);
+        }
         // Limpar a URL (para segurança e estética)
         window.history.pushState("", document.title, window.location.pathname + window.location.search);
         return token;
@@ -135,33 +129,37 @@ const getTokensFromHash = () => {
     return null;
 };
 
+// NOVO: Função para desconectar o usuário (Logout)
+const logout = () => {
+    // 1. Remove os tokens do localStorage
+    localStorage.removeItem('spotify_access_token');
+    localStorage.removeItem('spotify_refresh_token'); 
+    
+    // 2. Redireciona para a raiz, forçando a tela de login
+    window.location.href = '/'; 
+};
+
 // Inicialização: Verifica se o usuário está logado
 const initAuth = () => {
-    // 1. Tenta pegar token da URL hash (vindo do /callback)
     accessToken = getTokensFromHash();
 
-    // 2. Se não estiver na URL, tenta pegar do localStorage
     if (!accessToken) {
         accessToken = localStorage.getItem('spotify_access_token');
     }
+    
+    // Tenta obter o refresh token salvo
+    refreshToken = localStorage.getItem('spotify_refresh_token'); 
     
     if (accessToken) {
+        // USUÁRIO LOGADO: MOSTRA APP, ESCONDE LOGIN
         loginScreen.classList.add('hidden');
         mainApp.classList.remove('hidden');
         fetchUserProfile(accessToken);
     } else {
+        // USUÁRIO DESLOGADO: MOSTRA LOGIN, ESCONDE APP
         loginScreen.classList.remove('hidden');
         mainApp.classList.add('hidden');
     }
-};
-
-// NOVO: Função para desconectar o usuário (Logout)
-const logout = () => {
-    // 1. Remove o token do localStorage
-    localStorage.removeItem('spotify_access_token');
-    
-    // 2. Redireciona para a raiz, forçando a tela de login
-    window.location.href = '/'; 
 };
 
 
@@ -179,16 +177,56 @@ const fetchUserProfile = async (token) => {
         userInfoEl.textContent = data.display_name || data.id;
     } catch (error) {
         console.error('Erro ao buscar perfil:', error);
-        // Se falhar, o token provavelmente expirou. Limpar e forçar novo login.
-        localStorage.removeItem('spotify_access_token');
-        // Não chame initAuth, apenas redirecione para o login
-        window.location.href = '/login'; 
+        // Se falhar, o token provavelmente expirou. 
+        // Chama logout para forçar novo login e limpar tokens antigos
+        logout(); 
     }
 };
 
 // -----------------------------------------------------
-// FUNÇÕES DE PESQUISA (1. Busca Artista, 2. Confirma, 3. Busca Detalhes)
+// FUNÇÕES DE PESQUISA 
 // -----------------------------------------------------
+
+// Funcao Auxiliar para renovar o token
+const renewAccessToken = async () => {
+    if (!refreshToken) {
+        console.error("Refresh Token não disponível. Necessário novo login.");
+        logout();
+        return false;
+    }
+    
+    try {
+        searchStatus.className = 'status-message info-message';
+        searchStatus.textContent = 'Token expirado. Renovando sessão...';
+
+        const response = await fetch(`${BASE_URL}/refresh-token?refresh_token=${refreshToken}`);
+        
+        if (!response.ok) {
+            throw new Error('Falha na renovação do token.');
+        }
+
+        const data = await response.json();
+        
+        // Salva o novo Access Token e, se houver, o novo Refresh Token
+        localStorage.setItem('spotify_access_token', data.access_token);
+        if (data.refresh_token) {
+            localStorage.setItem('spotify_refresh_token', data.refresh_token);
+            refreshToken = data.refresh_token; // Atualiza a variável global
+        }
+        accessToken = data.access_token; // Atualiza a variável global
+        
+        searchStatus.textContent = 'Sessão renovada com sucesso! Tente novamente.';
+        return true;
+        
+    } catch (e) {
+        console.error('Erro ao renovar token:', e);
+        searchStatus.className = 'status-message error-message';
+        searchStatus.textContent = 'Falha na renovação da sessão. Faça login novamente.';
+        logout();
+        return false;
+    }
+}
+
 
 // 1. Inicia a busca (chamada pelo botão de pesquisa)
 const searchArtist = async () => {
@@ -235,6 +273,11 @@ const performArtistSearch = async (query, excludedIds) => {
         });
 
         if (!response.ok) {
+            // Tenta renovar o token se for erro de autenticação (401)
+            if (response.status === 401 && refreshToken && await renewAccessToken()) {
+                // Tenta a busca novamente após a renovação
+                return await performArtistSearch(query, excludedIds);
+            }
             const errorData = await response.json();
             throw new Error(errorData.error || 'Erro desconhecido na pesquisa.');
         }
@@ -277,6 +320,11 @@ const fetchTracksAndPlaylists = async () => {
         });
 
         if (!response.ok) {
+            // Tenta renovar o token se for erro de autenticação (401)
+            if (response.status === 401 && refreshToken && await renewAccessToken()) {
+                // Tenta a busca novamente após a renovação
+                return await fetchTracksAndPlaylists();
+            }
             const errorData = await response.json();
             throw new Error(errorData.error || 'Erro desconhecido ao obter detalhes.');
         }
@@ -292,14 +340,11 @@ const fetchTracksAndPlaylists = async () => {
         // --- LÓGICA DE SUGESTÃO DE NOME ---
         const suggestedName = `SPFC - Músicas de ${artistName}`;
         
-        // Atualiza o texto da sugestão com o nome
         playlistNameSuggestion.querySelector('.suggestion-name').textContent = `"${suggestedName}"`;
         playlistNameSuggestion.classList.remove('hidden');
         
-        // Define a sugestão como "dado" no elemento para o listener pegar
         playlistNameSuggestion.dataset.suggestedName = suggestedName;
         
-        // Garante que o campo de nome está visível se for a opção 'new'
         if (playlistDestinationSelect.value === 'new') {
             newPlaylistNameContainer.classList.remove('hidden');
         }
@@ -328,7 +373,6 @@ const populatePlaylistSelect = (playlists) => {
 };
 
 // public/script.js - Função Atualizada para mostrar todas as informações
-// Função para preencher a lista de faixas
 const populateTracksList = (tracks) => {
     tracksList.innerHTML = '';
     if (tracks.length === 0) {
@@ -344,14 +388,12 @@ const populateTracksList = (tracks) => {
         
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.value = track.uri; // URI é o identificador do Spotify
-        checkbox.checked = true; // Por padrão, todas vêm marcadas
+        checkbox.value = track.uri; 
+        checkbox.checked = true; 
         checkbox.addEventListener('change', checkCreationButtonState); 
 
-        // Formata a lista de artistas para mostrar quem participou
         const artistNames = track.artists ? track.artists.map(a => a.name).join(', ') : 'Artista Desconhecido';
         
-        // Nome da faixa + Artistas + Nome do Álbum
         const trackText = document.createTextNode(`${track.name} - Artistas: ${artistNames} (Álbum: ${track.album?.name || 'N/A'})`);
         
         label.appendChild(checkbox);
@@ -359,7 +401,7 @@ const populateTracksList = (tracks) => {
         item.appendChild(label);
         tracksList.appendChild(item);
     });
-    checkCreationButtonState(); // Verifica o estado do botão ao carregar a lista
+    checkCreationButtonState(); 
 };
 
 // ---------------------------------
@@ -367,7 +409,7 @@ const populateTracksList = (tracks) => {
 // ---------------------------------
 
 const createPlaylist = async () => {
-    creationStatus.textContent = ''; // Limpa status anterior
+    creationStatus.textContent = ''; 
     
     // 1. Coletar URIs das músicas selecionadas
     let selectedUris = Array.from(tracksList.querySelectorAll('input[type="checkbox"]:checked'))
@@ -382,7 +424,7 @@ const createPlaylist = async () => {
     // 2. Coletar opções
     const playlistOption = playlistDestinationSelect.value;
     const targetPlaylistId = existingPlaylistSelect.value;
-    const newPlaylistName = newPlaylistNameInput.value.trim(); // NOVO: Obter nome
+    const newPlaylistName = newPlaylistNameInput.value.trim(); 
 
     // Validação do Nome da Nova Playlist
     if (playlistOption === 'new' && newPlaylistName.length === 0) {
@@ -412,11 +454,16 @@ const createPlaylist = async () => {
                 trackUris: selectedUris,
                 playlistOption: playlistOption,
                 targetPlaylistId: targetPlaylistId,
-                newPlaylistName: newPlaylistName // ENVIAR O NOME PERSONALIZADO
+                newPlaylistName: newPlaylistName 
             })
         });
 
         if (!response.ok) {
+             // Tenta renovar o token se for erro de autenticação (401)
+            if (response.status === 401 && refreshToken && await renewAccessToken()) {
+                // Tenta a chamada novamente após a renovação
+                return await createPlaylist();
+            }
             const errorData = await response.json();
             throw new Error(errorData.error || 'Erro desconhecido na criação.');
         }
@@ -427,10 +474,8 @@ const createPlaylist = async () => {
         const action = playlistOption === 'new' ? 'Criada' : 'Atualizada';
         creationStatus.innerHTML = `${action} com sucesso! ID: ${data.playlistId}.<br>Abra seu Spotify para conferir!`;
         
-        // Se a playlist foi criada, recarregar as playlists do usuário
         if (playlistOption === 'new') {
-             // Recarrega as playlists sem iniciar o ciclo de busca do artista
-              fetchTracksAndPlaylists(); 
+             fetchTracksAndPlaylists(); 
         }
 
     } catch (error) {
@@ -460,41 +505,38 @@ artistSearchInput.addEventListener('keypress', (e) => {
 // Listener do botão de criação de playlist
 createPlaylistBtn.addEventListener('click', createPlaylist);
 
+// NOVO: Listener do botão de logout
+logoutBtn.addEventListener('click', logout);
+
 // NOVO: Listener para preenchimento da sugestão de nome
 playlistNameSuggestion.addEventListener('click', () => {
-    // Pega o nome sugerido que armazenamos no dataset
     const suggestedName = playlistNameSuggestion.dataset.suggestedName;
     if (suggestedName) {
         newPlaylistNameInput.value = suggestedName;
-        checkCreationButtonState(); // Reabilita o botão Criar Playlist
+        checkCreationButtonState(); 
     }
 });
 
 
 // NOVO: Listeners para o fluxo de confirmação
 confirmArtistBtn.addEventListener('click', async () => {
-    // 1. Esconde os botões de confirmação
     artistConfirmationButtons.classList.add('hidden');
     searchStatus.className = 'status-message info-message';
     searchStatus.textContent = `Buscando todas as músicas de ${artistName}...`;
     
-    // 2. Chama a busca de músicas
     await fetchTracksAndPlaylists();
 });
 
 refineSearchBtn.addEventListener('click', async () => {
-    // 1. Adiciona o ID do artista rejeitado à lista de exclusão
     if (currentArtistId) {
         excludedArtistIds.push(currentArtistId);
     }
     
-    // 2. Volta para o estado inicial para buscar o próximo artista
     artistInfoContainer.classList.add('hidden');
     artistConfirmationButtons.classList.add('hidden');
-    playlistCreatorSection.classList.add('hidden'); // Esconde a seção de músicas
+    playlistCreatorSection.classList.add('hidden'); 
     searchStatus.className = 'status-message info-message';
     searchStatus.textContent = `Artista ${artistName} rejeitado. Buscando o próximo artista...`;
 
-    // 3. Tenta a busca novamente com a nova lista de exclusão
     await performArtistSearch(currentSearchQuery, excludedArtistIds);
 });

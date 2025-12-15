@@ -1,4 +1,4 @@
-// server.js - CÓDIGO FINAL COM NOME PERSONALIZADO E CORREÇÃO 429
+// server.js - CÓDIGO FINAL COM REFRESH TOKEN E BATCHING
 require('dotenv').config(); 
 const express = require('express');
 const axios = require('axios');
@@ -58,7 +58,7 @@ app.get('/login', (req, res) => {
 });
 
 // ---------------------------------
-// 2. Rota de Callback (Recebe o código e troca por tokens)
+// 2. Rota de Callback (Recebe o código e troca por tokens) - ATUALIZADA
 // ---------------------------------
 app.get('/callback', async (req, res) => {
     const code = req.query.code || null;
@@ -90,7 +90,7 @@ app.get('/callback', async (req, res) => {
             // Redireciona para o frontend, passando os tokens na URL hash
             res.redirect('/#' + querystring.stringify({
                 access_token: access_token,
-                refresh_token: refresh_token
+                refresh_token: refresh_token // ENVIANDO O REFRESH TOKEN
             }));
 
         } catch (error) {
@@ -100,8 +100,45 @@ app.get('/callback', async (req, res) => {
     }
 });
 
+// ---------------------------------
+// 3. Rota para Renovação do Token (USADA PELO FRONTEND QUANDO DÁ 401)
+// ---------------------------------
+app.get('/refresh-token', async (req, res) => {
+    const refresh_token = req.query.refresh_token;
+
+    if (!refresh_token) {
+        return res.status(400).json({ error: 'Refresh Token não fornecido.' });
+    }
+
+    try {
+        const response = await axios({
+            method: 'post',
+            url: 'https://accounts.spotify.com/api/token',
+            data: querystring.stringify({
+                grant_type: 'refresh_token',
+                refresh_token: refresh_token
+            }),
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + (Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64'))
+            }
+        });
+
+        // Retorna o NOVO access_token e, se houver, um novo refresh_token
+        res.json(response.data);
+
+    } catch (error) {
+        console.error('Erro ao renovar token:', error.response ? error.response.data : error.message);
+        res.status(error.response ? error.response.status : 500).json({ 
+            error: 'Falha ao renovar o Access Token.',
+            details: error.response ? error.response.data : 'Erro interno.'
+        });
+    }
+});
+
+
 // -----------------------------------------------------
-// 3. Rota de API para Pesquisar Artista (COM FILTRO DE EXCLUSÃO)
+// 4. Rota de API para Pesquisar Artista (COM FILTRO DE EXCLUSÃO)
 // -----------------------------------------------------
 app.post('/api/search-artist', async (req, res) => {
     const { artistName, accessToken, excludedIds = [] } = req.body; 
@@ -147,7 +184,7 @@ app.post('/api/search-artist', async (req, res) => {
 
 
 // -----------------------------------------------------
-// 4. Rota de API para Detalhes (Busca Músicas e Playlists) - CORRIGIDA (com delay de 50ms)
+// 5. Rota de API para Detalhes (Busca Músicas e Playlists) - CORRIGIDA (com delay de 50ms)
 // -----------------------------------------------------
 app.post('/api/search-artist-details', async (req, res) => {
     const { accessToken, artistId, artistName } = req.body;
@@ -241,7 +278,7 @@ app.post('/api/search-artist-details', async (req, res) => {
 
 
 // ---------------------------------
-// 5. Rota de API para Criar Playlist (MODIFICADA para receber o nome)
+// 6. Rota de API para Criar Playlist (MODIFICADA: Batching 413)
 // ---------------------------------
 app.post('/api/create-playlist', async (req, res) => {
     // NOVO: Adicionado newPlaylistName
@@ -282,15 +319,25 @@ app.post('/api/create-playlist', async (req, res) => {
             return res.status(400).json({ error: 'Opção de playlist inválida.' });
         }
 
-        // 3. Adicionar as faixas (músicas) à playlist
-        await axios.post(`https://www.google.com/url?sa=E&source=gmail&q=https://api.spotify.com/v1/me/playlists?limit=50{playlistId}/tracks`, {
-            uris: trackUris 
-        }, {
-            headers: { 
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        // 3. Adicionar as faixas (músicas) à playlist (LÓGICA DE LOTES)
+        const batchSize = 100; // Máximo permitido pelo Spotify para POST /tracks
+        const totalTracks = trackUris.length;
+
+        for (let i = 0; i < totalTracks; i += batchSize) {
+            const batchUris = trackUris.slice(i, i + batchSize);
+            
+            await axios.post(`https://www.google.com/url?sa=E&source=gmail&q=https://api.spotify.com/v1/me/playlists?limit=50{playlistId}/tracks`, {
+                uris: batchUris // Envia apenas um lote
+            }, {
+                headers: { 
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            // Pequeno delay entre lotes para evitar 429 (Embora menos comum aqui, é boa prática)
+            await new Promise(resolve => setTimeout(resolve, 50)); 
+        }
 
  res.json({ message: 'Playlist criada/atualizada com sucesso!', playlistId: playlistId });
 
