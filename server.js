@@ -1,4 +1,4 @@
-// server.js - CÓDIGO FINAL E OTIMIZADO (NOMES E DESCRIÇÕES LIMPOS)
+// server.js - CÓDIGO FINAL COM FAIL-SAFE DE TOKEN
 require('dotenv').config(); 
 const express = require('express');
 const axios = require('axios');
@@ -184,7 +184,7 @@ app.post('/api/search-artist', async (req, res) => {
 
 
 // -----------------------------------------------------
-// 5. Rota de API para Detalhes (Busca Músicas e Playlists) - DELAY AGRESSIVO MANTIDO
+// 5. Rota de API para Detalhes (Busca Músicas e Playlists) - CORREÇÃO DE 429 AGRESSIVA
 // -----------------------------------------------------
 app.post('/api/search-artist-details', async (req, res) => {
     const { accessToken, artistId, artistName } = req.body;
@@ -232,7 +232,7 @@ app.post('/api/search-artist-details', async (req, res) => {
                 });
 
                 // >>> CÓDIGO DE ATRASO PARA EVITAR O ERRO 429
-                await new Promise(resolve => setTimeout(resolve, 750)); // MANTIDO EM 750MS
+                await new Promise(resolve => setTimeout(resolve, 750)); // AUMENTADO PARA 750MS
                 
             } catch (albumError) {
                 console.warn(`Aviso: Não foi possível obter faixas do álbum ${albumId}.`, albumError.message);
@@ -288,39 +288,39 @@ app.post('/api/create-playlist', async (req, res) => {
         return res.status(400).json({ error: 'Dados incompletos para criar/adicionar playlist.' });
     }
 
-    let userId;
-
-    // 1. Obter o ID do usuário (COM TRY/CATCH DE FAIL-SAFE CONTRA 500)
-    try {
-        const userResponse = await axios.get('https://api.spotify.com/v1/me', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        userId = userResponse.data.id;
-    } catch (tokenError) {
-        // Se falhar ao obter o ID do usuário, o token está ruim (401)
-        console.error('Falha ao obter ID do usuário (Token expirado/inválido):', tokenError.message);
-        return res.status(401).json({
-            error: 'Sessão expirada. Por favor, saia da conta e faça login novamente para renovar sua sessão.',
-            details: 'O Access Token falhou ao buscar o perfil do usuário.'
-        });
-    }
-    
-
     try {
         let playlistId;
+        let userId; // Declarar userId fora do bloco
+
+        // 1. Obter o ID do usuário (COM TRY/CATCH DE FAIL-SAFE CONTRA 500)
+        try {
+            const userResponse = await axios.get('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            userId = userResponse.data.id;
+        } catch (tokenError) {
+            // Se falhar ao obter o ID do usuário, o token está ruim (401)
+            console.error('Falha ao obter ID do usuário (Token expirado/inválido):', tokenError.message);
+            // Retorna 401 para que o frontend lide com a renovação/novo login
+            return res.status(401).json({
+                error: 'Sessão expirada. Seu token não é mais válido.',
+                details: 'Por favor, saia da conta e faça login novamente para renovar sua sessão.'
+            });
+        }
+        
 
         // 2. Criar nova playlist OU usar playlist existente
         if (playlistOption === 'new') {
             // Usa o nome enviado pelo frontend, ou um fallback se estiver vazio
-            const finalPlaylistName = newPlaylistName || `Músicas de ${artistName}`; // LIMPO
+            const finalPlaylistName = newPlaylistName || `SPFC - Músicas de ${artistName}`; 
             
             try { // <--- TRY/CATCH PARA ISOLAR A CRIAÇÃO DE PLAYLIST
                 const playlistResponse = await axios.post(
-    `https://api.spotify.com/v1/users/${userId}/playlists`, // CORRIGIDO
+    `https://api.spotify.com/v1/users/${userId}/playlists`,
     {
         name: finalPlaylistName,
         public: false,
-        description: `Playlist gerada automaticamente para o artista ${artistName} via Playlist Studio.` // LIMPO
+        description: `Playlist gerada automaticamente para o artista ${artistName} via App SPFC.`
     },
     {
         headers: { 
